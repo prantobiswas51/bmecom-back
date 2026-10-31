@@ -112,3 +112,18 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Products CRUD + cPanel deploy
+
+Endpoints: `POST/GET /products`, `GET/PATCH/DELETE /products/:id`.
+Locally: copy `.env.example` to `.env`, set `DB_PASSWORD`, run `npm run start:dev` (port 3034).
+
+### cPanel (bongomaker.com/ecom-back)
+- Setup Node.js App: Node 20.20.2, Production, root `bongomaker-back` (outside public_html),
+  URL `bongomaker.com` + `ecom-back`, startup file `app.cjs`.
+- Env vars: `API_PREFIX=ecom-back`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`,
+  `DB_SSL`, `DB_SYNCHRONIZE`. Do not set `PORT`.
+- After the first deploy click "Run NPM Install".
+
+### GitHub secrets
+`SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `APP_PATH` (`/home/bongomak/bongomaker-back`), optional `SSH_PORT`.
