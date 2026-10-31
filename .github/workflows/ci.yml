@@ -12,7 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Build tooling (@nestjs/cli, schematics) needs Node 22; the server still runs the output on 20.
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run lint
