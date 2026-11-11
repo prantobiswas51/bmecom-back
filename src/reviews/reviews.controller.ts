@@ -14,6 +14,8 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, type AuthUser } from '../auth/auth-user.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { UserRole } from '../users/user.entity.js';
 import { CreateReviewAdminDto, CreateReviewDto, ListReviewsAdminDto, PageDto, UpdateReviewAdminDto } from './dto/review.dto.js';
 import { ReviewsService } from './reviews.service.js';
 
@@ -52,8 +54,8 @@ export class ProductReviewsController {
   }
 }
 
-// TODO: any signed-in role can moderate for now; restrict with RolesGuard before launch.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Admin, UserRole.Superadmin)
 @Controller('reviews')
 export class ReviewsAdminController {
   constructor(private readonly reviews: ReviewsService) {}

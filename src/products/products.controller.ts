@@ -12,12 +12,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { UserRole } from '../users/user.entity.js';
 import { CategoryDto, CreateProductDto, ListProductsDto, NameDto, UpdateProductDto } from './dto/product.dto.js';
 import { ProductsService } from './products.service.js';
 import { TaxonomyService } from './taxonomy.service.js';
 
-// TODO: any signed-in role can use these for now; restrict with RolesGuard before launch.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Admin, UserRole.Superadmin)
 @Controller('products')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}

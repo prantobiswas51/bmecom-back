@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { UserRole } from '../users/user.entity.js';
 import { EditOrderDto, ListOrdersAdminDto, SetOrderStatusDto } from './dto/order.dto.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 
-// TODO: any signed-in role can manage orders for now; restrict with RolesGuard before launch.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Admin, UserRole.Superadmin)
 @Controller('admin/orders')
 export class OrdersAdminController {
   constructor(private readonly orders: OrdersAdminService) {}

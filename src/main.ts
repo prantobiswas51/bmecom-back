@@ -14,6 +14,8 @@ async function bootstrap() {
   }
   await renameLegacyOrderStatuses();
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // nginx runs on the same machine: believe its X-Forwarded-For so req.ip is the real visitor.
+  app.set('trust proxy', 'loopback');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   // Passenger keeps the sub-URI in the path, so on cPanel set API_PREFIX=ecom-back.
   if (process.env.API_PREFIX) app.setGlobalPrefix(process.env.API_PREFIX);

@@ -12,6 +12,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import multer from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { UserRole } from '../users/user.entity.js';
 
 export const UPLOAD_DIR = resolve(process.env.UPLOAD_DIR ?? 'uploads');
 
@@ -24,8 +26,8 @@ const EXTENSIONS: Record<string, string> = {
   'image/avif': '.avif',
 };
 
-// TODO: any signed-in role can upload for now; restrict with RolesGuard before launch.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Admin, UserRole.Superadmin)
 @Controller('uploads')
 export class UploadsController {
   @Post('image')

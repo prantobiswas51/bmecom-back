@@ -13,11 +13,13 @@ import {
 } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../auth/auth-user.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { UserRole } from './user.entity.js';
 import { CreateUserDto, ListUsersDto, UpdateUserDto } from './dto/user.dto.js';
 import { UsersAdminService } from './users-admin.service.js';
 
-// TODO: any signed-in role can manage users for now; restrict with RolesGuard before launch.
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.Admin, UserRole.Superadmin)
 @Controller('users')
 export class UsersAdminController {
   constructor(private readonly users: UsersAdminService) {}

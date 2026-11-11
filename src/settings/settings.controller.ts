@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { Roles, RolesGuard } from '../auth/roles.guard.js';
+import { UserRole } from '../users/user.entity.js';
 import { UpdateSettingsDto } from './dto/settings.dto.js';
 import { SettingsService } from './settings.service.js';
 
@@ -13,8 +15,8 @@ export class SettingsController {
     return this.settings.get();
   }
 
-  // TODO: any signed-in role can change settings for now; restrict with RolesGuard before launch.
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.Admin, UserRole.Superadmin)
   @Put()
   update(@Body() dto: UpdateSettingsDto) {
     return this.settings.update(dto);

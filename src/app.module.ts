@@ -4,7 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './auth/app-throttler.guard.js';
 import { AddressesModule } from './addresses/addresses.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { SettingsModule } from './settings/settings.module.js';
@@ -45,6 +46,6 @@ import { UsersModule } from './users/users.module.js';
     SystemModule,
   ],
   controllers: [AppController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [AppService, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule {}

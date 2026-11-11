@@ -14,8 +14,8 @@ export enum UserRole {
   Dealer = 'dealer',
 }
 
-/** Roles allowed into the admin panel. TODO: temporarily every role; restrict before launch. */
-export const ADMIN_PANEL_ROLES: readonly UserRole[] = Object.values(UserRole);
+/** Roles allowed into the admin panel (and the admin APIs, via RolesGuard). */
+export const ADMIN_PANEL_ROLES: readonly UserRole[] = [UserRole.Admin, UserRole.Superadmin];
 
 @Entity('users')
 export class User {
