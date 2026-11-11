@@ -1,20 +1,48 @@
-name: Deploy to cPanel
+name: Deploy to VPS
 
 on:
   push:
     branches: [main, master]
   workflow_dispatch:
 
-concurrency: deploy
+# One deploy at a time; a newer push waits instead of cutting a running deploy short.
+concurrency:
+  group: deploy-back
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Lets the job read secrets and variables stored in the "bmback-prod" GitHub Environment
+    # (Settings > Environments). Repository-level ones work too; GitHub creates the environment if it is missing.
+    # Add "required reviewers" to that environment if you want a human to approve each deploy.
+    environment: bmback-prod
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || 22 }}
+      APP_PATH: ${{ secrets.APP_PATH }}
+      BACK_PORT: ${{ vars.BACK_PORT || 3034 }}
+      PM2_APP_NAME: ${{ vars.PM2_APP_NAME || 'bmback-prod' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check deploy settings
+        env:
+          KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in SSH_HOST SSH_USER APP_PATH; do
+            [ -n "${!name}" ] || { echo "::error::Missing secret $name"; missing=1; }
+          done
+          [ -n "$KEY" ] || { echo "::error::Missing secret SSH_PRIVATE_KEY"; missing=1; }
+          exit $missing
+
       - uses: actions/setup-node@v4
         with:
-          # Build tooling (@nestjs/cli, schematics) needs Node 22; the server still runs the output on 20.
           node-version: 22
           cache: npm
       - run: npm ci
@@ -23,22 +51,104 @@ jobs:
       - run: npm run build
 
       - name: Prepare SSH
+        env:
+          KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_deploy
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          case "$SSH_HOST" in
+            *@*|*://*|*" "*|*/*) echo "::error::SSH_HOST must be just the server address (an IP or domain), with no user@, protocol or spaces. The user goes in SSH_USER."; exit 1 ;;
+          esac
 
-      # The host has no rsync, so stream a tarball over SSH. node_modules is NOT
-      # uploaded or touched: install it with the cPanel "Run NPM Install" button.
-      - name: Upload build
-        run: |
-          tar -czf - dist package.json package-lock.json app.cjs | ssh -i ~/.ssh/id_deploy -p "${{ secrets.SSH_PORT || 22 }}" \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "mkdir -p ${{ secrets.APP_PATH }} && cd ${{ secrets.APP_PATH }} && rm -rf dist && tar -xzf -"
+          # With SSH_KNOWN_HOSTS the server's key must match it. Without, the key is remembered on first sight.
+          if [ -n "$KNOWN_HOSTS" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" >> ~/.ssh/known_hosts
+            strict=yes
+          else
+            strict=accept-new
+          fi
+          printf 'Host *\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking %s\n  ConnectTimeout 15\n  ServerAliveInterval 15\n' "$strict" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
-      - name: Restart app
+          # Fail here, with the real reason, instead of halfway through the upload.
+          if ! out=$(ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" 'echo connected' 2>&1); then
+            echo "::error::Could not log in to the server over SSH."
+            echo "ssh said: $out"
+            echo "Check: the SSH_USER and SSH_PORT secrets; that the public half of SSH_PRIVATE_KEY is in that user's ~/.ssh/authorized_keys; and that the VPS firewall or provider security group allows inbound SSH from the internet."
+            exit 1
+          fi
+          echo "$out"
+
+      # Ships only what runs in production. Dependencies are installed on the server (npm ci --omit=dev),
+      # so native modules are built for the server itself.
+      - name: Upload release
         run: |
-          ssh -i ~/.ssh/id_deploy -p "${{ secrets.SSH_PORT || 22 }}" \
-            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
-            "mkdir -p ${{ secrets.APP_PATH }}/tmp && touch ${{ secrets.APP_PATH }}/tmp/restart.txt"
+          tar -czf - dist package.json package-lock.json ecosystem.config.cjs | ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "mkdir -p $(printf '%q' "$APP_PATH/releases/$GITHUB_SHA") && tar -xzf - -C $(printf '%q' "$APP_PATH/releases/$GITHUB_SHA")"
+
+      - name: Switch to the new release
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "bash -s -- $(printf '%q ' "$APP_PATH" "$GITHUB_SHA" "$BACK_PORT" "$PM2_APP_NAME")" <<'REMOTE'
+          # A non-interactive SSH shell does not load nvm, so node, npm and pm2 may be missing from PATH.
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true
+          set -euo pipefail
+          app_path=$1; release=$2; fallback_port=$3; name=$4
+          cd "$app_path"
+          mkdir -p shared/uploads releases
+          touch shared/.env
+
+          # Everything that must survive a deploy lives in shared/ and is linked into the release:
+          # the .env settings and the product photos uploaded from the admin panel.
+          cd "releases/$release"
+          ln -sfn ../../shared/.env .env
+          ln -sfn ../../shared/uploads uploads
+          npm ci --omit=dev --no-audit --no-fund
+          cd "$app_path"
+
+          # The port the app will listen on is whatever shared/.env says.
+          port=$(grep -E '^PORT=' shared/.env | tail -n1 | cut -d= -f2- | tr -d '\r"' | tr -d "'" | tr -d ' ' || true)
+          port=${port:-$fallback_port}
+
+          previous=$(readlink current 2>/dev/null || true)
+          ln -sfn "releases/$release" current.next
+          mv -Tf current.next current
+
+          # A process that was started by hand from another folder would keep running that old code on
+          # reload, so it is replaced once by one that runs from "current".
+          if pm2 describe "$name" > /dev/null 2>&1 && ! pm2 jlist 2>/dev/null | tr -d ' \n' | grep -q "\"pm_cwd\":\"$app_path/current\""; then
+            echo "Replacing the existing $name process with one that runs from $app_path/current"
+            pm2 delete "$name"
+          fi
+
+          start() {
+            APP_CURRENT="$app_path/current" PM2_APP_NAME="$name" \
+              pm2 startOrReload "$app_path/current/ecosystem.config.cjs" --update-env
+          }
+          start
+
+          # Wait until the app answers (any HTTP reply counts) before calling the deploy good.
+          for _ in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              pm2 save
+              ls -1dt releases/*/ | tail -n +4 | xargs -r rm -rf   # keep the 3 newest releases
+              echo "Deployed $release (answered $code on port $port)"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "The new release did not answer on port $port within 40s." >&2
+          pm2 logs "$name" --lines 40 --nostream || true
+          if [ -n "$previous" ]; then
+            echo "Rolling back to $previous" >&2
+            ln -sfn "$previous" current.next
+            mv -Tf current.next current
+            start
+          fi
+          exit 1
+          REMOTE

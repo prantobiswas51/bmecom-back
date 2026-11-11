@@ -5,44 +5,100 @@ import {
   Get,
   HttpCode,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { CreateProductDto } from './dto/create-product.dto.js';
-import { UpdateProductDto } from './dto/update-product.dto.js';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { CategoryDto, CreateProductDto, ListProductsDto, NameDto, UpdateProductDto } from './dto/product.dto.js';
 import { ProductsService } from './products.service.js';
+import { TaxonomyService } from './taxonomy.service.js';
 
+// TODO: any signed-in role can use these for now; restrict with RolesGuard before launch.
+@UseGuards(JwtAuthGuard)
 @Controller('products')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
+
+  @Get()
+  list(@Query() query: ListProductsDto) {
+    return this.products.list(query);
+  }
+
+  @Get(':id')
+  get(@Param('id', ParseUUIDPipe) id: string) {
+    return this.products.get(id);
+  }
 
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.products.create(dto);
   }
 
-  @Get()
-  findAll() {
-    return this.products.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.products.findOne(id);
-  }
-
   @Patch(':id')
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateProductDto,
-  ) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProductDto) {
     return this.products.update(id, dto);
   }
 
-  @Delete(':id')
   @HttpCode(204)
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.products.remove(id);
+  @Delete(':id')
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.products.remove(id);
+  }
+}
+
+@UseGuards(JwtAuthGuard)
+@Controller('brands')
+export class BrandsController {
+  constructor(private readonly taxonomy: TaxonomyService) {}
+
+  @Get()
+  list() {
+    return this.taxonomy.listBrands();
+  }
+
+  @Post()
+  create(@Body() dto: NameDto) {
+    return this.taxonomy.createBrand(dto.name);
+  }
+
+  @Patch(':id')
+  rename(@Param('id', ParseUUIDPipe) id: string, @Body() dto: NameDto) {
+    return this.taxonomy.renameBrand(id, dto.name);
+  }
+
+  @HttpCode(204)
+  @Delete(':id')
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.taxonomy.removeBrand(id);
+  }
+}
+
+@UseGuards(JwtAuthGuard)
+@Controller('categories')
+export class CategoriesController {
+  constructor(private readonly taxonomy: TaxonomyService) {}
+
+  @Get()
+  list() {
+    return this.taxonomy.listCategories();
+  }
+
+  @Post()
+  create(@Body() dto: CategoryDto) {
+    return this.taxonomy.createCategory(dto.name, dto.parentId);
+  }
+
+  @Patch(':id')
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CategoryDto) {
+    return this.taxonomy.updateCategory(id, dto.name, dto.parentId);
+  }
+
+  @HttpCode(204)
+  @Delete(':id')
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.taxonomy.removeCategory(id);
   }
 }

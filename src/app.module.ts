@@ -3,11 +3,22 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AddressesModule } from './addresses/addresses.module.js';
+import { AuthModule } from './auth/auth.module.js';
+import { SettingsModule } from './settings/settings.module.js';
+import { OrdersModule } from './orders/orders.module.js';
 import { ProductsModule } from './products/products.module.js';
+import { ReviewsModule } from './reviews/reviews.module.js';
+import { SystemModule } from './system/system.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Global default; credential routes tighten it with @Throttle.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -24,9 +35,16 @@ import { ProductsModule } from './products/products.module.js';
         synchronize: config.get('DB_SYNCHRONIZE', 'true') === 'true',
       }),
     }),
+    UsersModule,
+    AuthModule,
     ProductsModule,
+    OrdersModule,
+    SettingsModule,
+    ReviewsModule,
+    AddressesModule,
+    SystemModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

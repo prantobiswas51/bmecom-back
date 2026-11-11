@@ -1,18 +1,26 @@
 name: CI
 
+# Checks pull requests and feature branches. Pushes to main are checked by the
+# Deploy workflow, which runs the same lint, tests and build before it ships.
 on:
   push:
-    branches: [main, master]
+    branches-ignore: [main, master]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # Build tooling (@nestjs/cli, schematics) needs Node 22; the server still runs the output on 20.
           node-version: 22
           cache: npm
       - run: npm ci
