@@ -25,6 +25,7 @@ import { Category } from './entities/category.entity.js';
 import { ProductImage } from './entities/product-image.entity.js';
 import { ProductVariant } from './entities/product-variant.entity.js';
 import { Product, ProductVisibility, type AxisDefinition } from './entities/product.entity.js';
+import { cleanRichText } from './rich-text.js';
 import { slugify } from './slugify.js';
 
 const UNIQUE_VIOLATION = '23505';
@@ -134,7 +135,7 @@ export class ProductsService {
     // --- plain fields ---------------------------------------------------
     if (dto.name !== undefined) product.name = dto.name.trim();
     if (dto.shortDescription !== undefined) product.shortDescription = dto.shortDescription;
-    if (dto.description !== undefined) product.description = dto.description;
+    if (dto.description !== undefined) product.description = cleanRichText(dto.description);
     if (dto.sku !== undefined) product.sku = dto.sku ?? null;
     if (dto.barcode !== undefined) product.barcode = dto.barcode ?? null;
     if (dto.weight !== undefined) product.weight = dto.weight;
