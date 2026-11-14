@@ -8,6 +8,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AppThrottlerGuard } from './auth/app-throttler.guard.js';
 import { AddressesModule } from './addresses/addresses.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { BlogModule } from './blog/blog.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { ProductsModule } from './products/products.module.js';
@@ -44,6 +45,7 @@ import { UsersModule } from './users/users.module.js';
     ReviewsModule,
     AddressesModule,
     SystemModule,
+    BlogModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
