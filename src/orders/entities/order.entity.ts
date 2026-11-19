@@ -89,6 +89,10 @@ export class Order {
   @Column({ type: 'int' })
   total: number;
 
+  /** True when this order was placed with stock tracking, so its items came out of stock and go back if it is cancelled or returned. Orders placed before stock tracking stay false: cancelling them never adds back units that were never removed. */
+  @Column({ type: 'boolean', default: false })
+  stockReserved: boolean;
+
   @OneToMany(() => OrderItem, (item) => item.order, { cascade: ['insert'] })
   items: OrderItem[];
 

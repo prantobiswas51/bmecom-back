@@ -41,6 +41,10 @@ export class ProductVariant {
   @Column({ type: 'int', default: 0 })
   sortOrder: number;
 
+  /** Units on hand. null = stock is not tracked for this variant. */
+  @Column({ type: 'int', nullable: true })
+  stock: number | null;
+
   /** e.g. { "Color": "Red", "Size": "M" } */
   @Column({ type: 'jsonb', default: {} })
   attributes: Record<string, string>;

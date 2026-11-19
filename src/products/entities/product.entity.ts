@@ -61,6 +61,10 @@ export class Product {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, transformer: numeric })
   weight: number | null;
 
+  /** Units on hand. null = stock is not tracked, so the product can always be ordered. A grouped product's stock lives on its variants. */
+  @Column({ type: 'int', nullable: true })
+  stock: number | null;
+
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: numeric })
   buyingPrice: number;
 

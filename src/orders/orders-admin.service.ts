@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { Product, ProductVisibility } from '../products/entities/product.entity.js';
+import { mergeLines, returnStock, takeStock, type StockLine } from '../products/stock.js';
 import type { EditOrderDto, ListOrdersAdminDto } from './dto/order.dto.js';
 import { OrderItem } from './entities/order-item.entity.js';
 import { Order, OrderStatus } from './entities/order.entity.js';
@@ -22,6 +23,29 @@ const STATUS_DATE = {
 
 /** Orders can be edited until they are handed to the courier. */
 const EDITABLE = [OrderStatus.New, OrderStatus.Processing, OrderStatus.Hold];
+
+/** Statuses where the goods are not going to the customer, so their units are back on the shelf. */
+const GIVES_BACK = [OrderStatus.Cancelled, OrderStatus.Returned];
+
+const toStockLine = (i: OrderItem): StockLine => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity });
+const itemNames = (items: OrderItem[]) =>
+  new Map(items.map((i) => [`${i.productId}:${i.variantId ?? ''}`, [i.name, i.variantLabel].filter(Boolean).join(' · ')]));
+
+/** What an edit changes in stock: lines that grew take units, lines that shrank or went away give them back. */
+function stockDifference(before: StockLine[], after: StockLine[]) {
+  const key = (l: StockLine) => `${l.productId}:${l.variantId ?? ''}`;
+  const was = new Map(mergeLines(before).map((l) => [key(l), l]));
+  const now = new Map(mergeLines(after).map((l) => [key(l), l]));
+  const take: StockLine[] = [];
+  const give: StockLine[] = [];
+  for (const k of new Set([...was.keys(), ...now.keys()])) {
+    const line = now.get(k) ?? was.get(k)!;
+    const diff = (now.get(k)?.quantity ?? 0) - (was.get(k)?.quantity ?? 0);
+    if (diff > 0) take.push({ ...line, quantity: diff });
+    else if (diff < 0) give.push({ ...line, quantity: -diff });
+  }
+  return { take, give };
+}
 
 /** Where an order may go next. A cancelled order can be reopened, in case it was cancelled by mistake. */
 export const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
@@ -144,7 +168,7 @@ export class OrdersAdminService {
   }
 
   async setStatus(orderNumber: string, status: OrderStatus) {
-    const order = await this.orders.findOneBy({ orderNumber });
+    const order = await this.orders.findOne({ where: { orderNumber }, relations: { items: true } });
     if (!order) throw new NotFoundException('Order not found');
     if (!NEXT_STATUSES[order.status].includes(status)) {
       throw new BadRequestException(`An order that is ${order.status} cannot be changed to ${status}`);
@@ -156,7 +180,18 @@ export class OrdersAdminService {
       const column = STATUS_DATE[status as keyof typeof STATUS_DATE];
       stamp = { [column]: order[column] ?? new Date() };
     }
-    await this.orders.update({ id: order.id }, { status, ...stamp });
+    await this.orders.manager.transaction(async (m) => {
+      // Cancelled and returned orders give their units back; reopening a cancelled order takes them again (and fails if they are gone).
+      if (order.stockReserved) {
+        const lines = order.items.map(toStockLine);
+        if (GIVES_BACK.includes(status) && !GIVES_BACK.includes(order.status)) {
+          await returnStock(m, lines, orderNumber);
+        } else if (order.status === OrderStatus.Cancelled && !GIVES_BACK.includes(status)) {
+          await takeStock(m, lines, orderNumber, itemNames(order.items));
+        }
+      }
+      await m.update(Order, { id: order.id }, { status, ...stamp });
+    });
     return this.get(orderNumber);
   }
 
@@ -167,6 +202,7 @@ export class OrdersAdminService {
     if (!EDITABLE.includes(order.status)) {
       throw new BadRequestException(`An order that is ${order.status} can no longer be edited`);
     }
+    const before = order.items.map(toStockLine); // taken now: the loop below changes quantities in place
     const existing = new Map(order.items.map((l) => [l.id, l]));
     const kept = new Map<string, OrderItem>(); // existing lines, with their new quantities
     const added: OrderItem[] = [];
@@ -213,6 +249,12 @@ export class OrdersAdminService {
     await this.orders.manager.transaction(async (tx) => {
       if (removed.length > 0) await tx.delete(OrderItem, removed);
       await tx.save(OrderItem, lines);
+      // Only the difference moves: more units on the order take stock, fewer give it back.
+      if (order.stockReserved) {
+        const { take, give } = stockDifference(before, lines.map(toStockLine));
+        await returnStock(tx, give, orderNumber);
+        await takeStock(tx, take, orderNumber, itemNames(lines));
+      }
       await tx.update(Order, order.id, {
         customerName: dto.name,
         phone: dto.phone,

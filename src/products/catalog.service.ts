@@ -4,6 +4,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Product, ProductVisibility } from './entities/product.entity.js';
+import { LOW_STOCK } from './stock.service.js';
 
 /** What the storefront shows: live products, and upcoming ones that can't be ordered yet. */
 const SHOWN = [ProductVisibility.Live, ProductVisibility.Upcoming];
@@ -40,6 +41,13 @@ export class CatalogQueryDto {
   @Min(1)
   limit?: number;
 }
+
+/** Untracked stock (null) can always be ordered. */
+const sellable = (stock: number | null) => stock === null || stock > 0;
+/** The exact count is only shown when it is low enough to nudge a shopper; otherwise it stays private. */
+const fewLeft = (stock: number | null) => (stock !== null && stock > 0 && stock <= LOW_STOCK ? stock : null);
+/** A grouped product is in stock while any variant is. */
+const inStock = (p: Product) => (p.variants.length ? p.variants.some((v) => sellable(v.stock)) : sellable(p.stock));
 
 // Cheapest price a shopper can pay: the lowest variant price, with variants that have none
 // falling back to the product's own.
@@ -130,6 +138,8 @@ export class CatalogService {
         sku: v.sku ?? p.sku,
         attributes: v.attributes,
         price: v.retailerPrice ?? p.retailerPrice,
+        inStock: sellable(v.stock),
+        left: fewLeft(v.stock),
       }));
     const prices = variants.length ? variants.map((v) => v.price) : [p.retailerPrice];
     const ref = (c: { name: string; slug: string }) => ({ name: c.name, slug: c.slug });
@@ -143,6 +153,8 @@ export class CatalogService {
       sku: p.sku,
       weight: p.weight,
       upcoming: p.visibility === ProductVisibility.Upcoming,
+      inStock: inStock(p),
+      left: p.variants.length ? null : fewLeft(p.stock),
       brand: p.brand ? ref(p.brand) : null,
       category: p.primaryCategory ? ref(p.primaryCategory) : null,
       secondaryCategories: p.secondaryCategories.map(ref),
@@ -210,6 +222,7 @@ export class CatalogService {
       category: p.primaryCategory ? { name: p.primaryCategory.name, slug: p.primaryCategory.slug } : null,
       grouped: p.variants.length > 0,
       upcoming: p.visibility === ProductVisibility.Upcoming,
+      inStock: inStock(p),
       priceFrom: Math.min(...prices),
       priceTo: Math.max(...prices),
     };

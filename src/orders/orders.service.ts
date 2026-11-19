@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Product, ProductVisibility } from '../products/entities/product.entity.js';
+import { takeStock } from '../products/stock.js';
 import type { CartItemDto, PlaceOrderDto } from './dto/order.dto.js';
 import { OrderItem } from './entities/order-item.entity.js';
 import { Order } from './entities/order.entity.js';
@@ -21,6 +22,8 @@ export type PricedLine = {
   unitPrice: number;
   quantity: number;
   lineTotal: number;
+  /** Units in stock, or null when stock isn't tracked for this item. */
+  available: number | null;
 };
 
 /** A cart line the shop can no longer sell: removed, hidden, or its variant is gone. */
@@ -85,6 +88,7 @@ export class OrdersService {
       unitPrice,
       quantity: item.quantity,
       lineTotal: unitPrice * item.quantity,
+      available: variant ? variant.stock : p.stock,
     };
   }
 
@@ -97,36 +101,45 @@ export class OrdersService {
     const shippingFee = SHIPPING_FEE;
     const accessKey = randomBytes(12).toString('hex');
 
+    const names = new Map(lines.map((l) => [`${l.productId}:${l.variantId ?? ''}`, [l.name, l.variantLabel].filter(Boolean).join(' · ')]));
+
     // The number is short enough to read out over the phone, so collisions are possible; retry.
     for (let attempt = 0; attempt < 5; attempt++) {
-      const order = this.orders.create({
-        orderNumber: this.newOrderNumber(),
-        accessKey,
-        userId,
-        customerName: dto.name,
-        phone: dto.phone,
-        email: dto.email ?? null,
-        address: dto.address,
-        note: dto.note ?? null,
-        subtotal,
-        shippingFee,
-        total: subtotal + shippingFee,
-        items: lines.map((l) =>
-          this.ds.getRepository(OrderItem).create({
-            productId: l.productId,
-            variantId: l.variantId,
-            name: l.name,
-            variantLabel: l.variantLabel,
-            sku: l.sku,
-            image: l.image,
-            unitPrice: l.unitPrice,
-            quantity: l.quantity,
-            lineTotal: l.lineTotal,
-          }),
-        ),
-      });
       try {
-        await this.orders.save(order);
+        // The order and its stock come out together: if an item has run out, no order is made.
+        const order = await this.ds.transaction(async (m) => {
+          const saved = await m.save(
+            m.create(Order, {
+              orderNumber: this.newOrderNumber(),
+              accessKey,
+              userId,
+              customerName: dto.name,
+              phone: dto.phone,
+              email: dto.email ?? null,
+              address: dto.address,
+              note: dto.note ?? null,
+              subtotal,
+              shippingFee,
+              total: subtotal + shippingFee,
+              stockReserved: true,
+              items: lines.map((l) =>
+                m.create(OrderItem, {
+                  productId: l.productId,
+                  variantId: l.variantId,
+                  name: l.name,
+                  variantLabel: l.variantLabel,
+                  sku: l.sku,
+                  image: l.image,
+                  unitPrice: l.unitPrice,
+                  quantity: l.quantity,
+                  lineTotal: l.lineTotal,
+                }),
+              ),
+            }),
+          );
+          await takeStock(m, lines, saved.orderNumber, names);
+          return saved;
+        });
         return { orderNumber: order.orderNumber, accessKey, total: order.total };
       } catch (e) {
         const duplicate = (e as { code?: string }).code === '23505';
