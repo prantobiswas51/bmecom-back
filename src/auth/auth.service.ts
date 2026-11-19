@@ -19,6 +19,10 @@ import { PasswordService } from './password.service.js';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
+/** Most emails of one kind (verify, reset) a person can be sent in the window. */
+const EMAIL_LIMIT = 3;
+const EMAIL_WINDOW_MS = 20 * 60_000;
+
 const EMAIL_TOKEN_TTL: Record<AuthTokenType, number> = {
   [AuthTokenType.VerifyEmail]: 24 * HOUR,
   [AuthTokenType.ResetPassword]: HOUR,
@@ -49,7 +53,7 @@ export class AuthService {
   }
 
   async signup(dto: SignupDto) {
-    if (await this.users.findByEmail(dto.email)) {
+    if (await this.users.findVerifiedByEmail(dto.email)) {
       throw new ConflictException('An account with this email already exists');
     }
     const user = await this.users.create({
@@ -62,11 +66,17 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.users.findByEmailWithPassword(dto.email);
-    const valid = user
-      ? await this.passwords.verify(dto.password, user.passwordHash)
-      : await this.passwords.verifyDummy(dto.password);
-    if (!user || !valid) throw new UnauthorizedException('Invalid email or password');
+    // Unverified sign-ups can share an address, so try each until the password fits.
+    const candidates = await this.users.findAllByEmailWithPassword(dto.email);
+    let user: User | undefined;
+    for (const candidate of candidates) {
+      if (await this.passwords.verify(dto.password, candidate.passwordHash)) {
+        user = candidate;
+        break;
+      }
+    }
+    if (candidates.length === 0) await this.passwords.verifyDummy(dto.password);
+    if (!user) throw new UnauthorizedException('Invalid email or password');
     return this.issueSession(user);
   }
 
@@ -103,18 +113,30 @@ export class AuthService {
 
   async verifyEmail(token: string) {
     const userId = await this.consumeToken(token, AuthTokenType.VerifyEmail);
-    await this.users.markEmailVerified(userId);
+    try {
+      await this.users.markEmailVerified(userId);
+    } catch (err) {
+      // The unique index on verified addresses: someone else verified this email first.
+      if ((err as { code?: string }).code === '23505') {
+        throw new ConflictException('This email was already verified on another account, so it cannot be used here.');
+      }
+      throw err;
+    }
   }
 
   async resendVerification(userId: string) {
     const user = await this.users.findById(userId);
-    if (user && !user.emailVerifiedAt) await this.sendVerificationEmail(user);
+    if (user && !user.emailVerifiedAt && !(await this.askedTooOften(user.id, AuthTokenType.VerifyEmail))) {
+      await this.sendVerificationEmail(user);
+    }
   }
 
   /** Never reveals whether the email has an account. */
   async forgotPassword(email: string) {
-    const user = await this.users.findByEmail(email);
+    const [user] = await this.users.findAllByEmail(email); // the verified account if there is one
     if (!user) return;
+    // Over the limit: send nothing, and say nothing different, so the answer never hints that the account exists.
+    if (await this.askedTooOften(user.id, AuthTokenType.ResetPassword)) return;
     const token = await this.createEmailToken(user.id, AuthTokenType.ResetPassword);
     const link = `${this.frontendUrl}/auth/reset-password?token=${token}`;
     await this.mail
@@ -140,8 +162,7 @@ export class AuthService {
 
   /** Checks the current password, then signs every other device out and returns a fresh session for this one. */
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const found = await this.users.findById(userId);
-    const user = found && (await this.users.findByEmailWithPassword(found.email));
+    const user = await this.users.findByIdWithPassword(userId);
     if (!user || !(await this.passwords.verify(currentPassword, user.passwordHash))) {
       throw new UnauthorizedException('Your current password is not right');
     }
@@ -204,6 +225,16 @@ export class AuthService {
       }),
     );
     return token;
+  }
+
+  /**
+   * True once this person has already been emailed a link of this kind {@link EMAIL_LIMIT} times in the
+   * last {@link EMAIL_WINDOW_MS}. Each email carries a stored token, so counting tokens counts emails
+   * (and it holds across restarts and several server processes).
+   */
+  private async askedTooOften(userId: string, type: AuthTokenType) {
+    const recent = await this.authTokens.countBy({ userId, type, createdAt: MoreThan(new Date(Date.now() - EMAIL_WINDOW_MS)) });
+    return recent >= EMAIL_LIMIT;
   }
 
   /** Marks the token used and returns its user. Fails if unknown, expired or already used. */

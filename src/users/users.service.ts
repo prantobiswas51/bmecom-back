@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { User } from './user.entity.js';
 
 @Injectable()
@@ -13,17 +13,29 @@ export class UsersService {
     return this.repo.findOneBy({ id });
   }
 
-  findByEmail(email: string) {
-    return this.repo.findOneBy({ email });
+  /** The account that owns this address: the one that verified it. */
+  findVerifiedByEmail(email: string) {
+    return this.repo.findOneBy({ email, emailVerifiedAt: Not(IsNull()) });
   }
 
-  /** Same as findByEmail but also loads the password hash, for login. */
-  findByEmailWithPassword(email: string) {
+  /** Every account signed up with this address, the verified one first, then newest. */
+  findAllByEmail(email: string) {
+    return this.repo.find({ where: { email }, order: { emailVerifiedAt: { direction: 'ASC', nulls: 'LAST' }, createdAt: 'DESC' } });
+  }
+
+  /** Same people as findAllByEmail, with the password hashes, for login. */
+  findAllByEmailWithPassword(email: string) {
     return this.repo
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
       .where('user.email = :email', { email })
-      .getOne();
+      .orderBy('user.emailVerifiedAt', 'ASC', 'NULLS LAST')
+      .addOrderBy('user.createdAt', 'DESC')
+      .getMany();
+  }
+
+  findByIdWithPassword(id: string) {
+    return this.repo.createQueryBuilder('user').addSelect('user.passwordHash').where('user.id = :id', { id }).getOne();
   }
 
   create(data: { email: string; passwordHash: string; name?: string | null }) {

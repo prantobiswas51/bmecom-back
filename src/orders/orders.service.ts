@@ -1,7 +1,8 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, IsNull, Not, Repository } from 'typeorm';
+import { User } from '../users/user.entity.js';
 import { Product, ProductVisibility } from '../products/entities/product.entity.js';
 import { sellPrice } from '../products/price.js';
 import { takeStock } from '../products/stock.js';
@@ -97,6 +98,11 @@ export class OrdersService {
     const { lines, unavailable, subtotal } = await this.quote(dto.items);
     if (unavailable.length > 0) {
       throw new BadRequestException('Some items in your cart are no longer available. Please review your cart.');
+    }
+
+    // An account whose email is not verified yet may not claim orders: they are kept as guest orders.
+    if (userId && !(await this.ds.getRepository(User).existsBy({ id: userId, emailVerifiedAt: Not(IsNull()) }))) {
+      userId = null;
     }
 
     const shippingFee = SHIPPING_FEE;

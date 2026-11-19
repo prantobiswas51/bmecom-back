@@ -17,11 +17,14 @@ import { JwtAuthGuard } from './jwt-auth.guard.js';
 // Credential endpoints get a much tighter limit than the global default.
 const strict = Throttle({ default: { limit: 5, ttl: 60_000 } });
 
+// Each address may create at most 5 accounts in 30 minutes.
+const signupLimit = Throttle({ default: { limit: 5, ttl: 30 * 60_000 } });
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
-  @strict
+  @signupLimit
   @Post('signup')
   signup(@Body() dto: SignupDto) {
     return this.auth.signup(dto);
@@ -66,7 +69,7 @@ export class AuthController {
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     await this.auth.forgotPassword(dto.email);
-    return { message: 'If that email has an account, a reset link has been sent.' };
+    return { message: 'If that email has an account, a reset link has been sent. Please wait a few minutes before asking again.' };
   }
 
   @strict

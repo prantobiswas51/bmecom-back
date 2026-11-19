@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Not, Repository } from 'typeorm';
+import { ILike, IsNull, Not, Repository } from 'typeorm';
 import { PasswordService } from '../auth/password.service.js';
 import type { CreateUserDto, ListUsersDto, UpdateUserDto } from './dto/user.dto.js';
 import { User, UserRole } from './user.entity.js';
@@ -81,6 +81,9 @@ export class UsersAdminService {
     if (dto.name !== undefined) user.name = dto.name ?? null;
     if (dto.role !== undefined) user.role = dto.role;
     if (dto.emailVerified !== undefined && dto.emailVerified !== (user.emailVerifiedAt !== null)) {
+      if (dto.emailVerified && (await this.users.existsBy({ email: user.email, emailVerifiedAt: Not(IsNull()), id: Not(id) }))) {
+        throw new ConflictException('Another account already verified this email');
+      }
       user.emailVerifiedAt = dto.emailVerified ? new Date() : null;
     }
     return view(await this.users.save(user));
