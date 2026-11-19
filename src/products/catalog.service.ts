@@ -11,18 +11,22 @@ const SHOWN = [ProductVisibility.Live, ProductVisibility.Upcoming];
 
 export const CATALOG_SORTS =['newest', 'price-asc', 'price-desc', 'name'] as const;
 
+const SLUG_LIST = /^[\p{L}\p{N}-]+(,[\p{L}\p{N}-]+)*$/u;
+const slugs = (list: string) => [...new Set(list.split(',').filter(Boolean))].slice(0, 30);
+
 export class CatalogQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
 
-  /** Category slug; matches a product's category or one of its sub categories. */
+  /** Category slug, or several separated by commas; matches a product in any of them or in their sub categories. */
   @IsOptional()
-  @Matches(/^[\p{L}\p{N}-]+$/u)
+  @Matches(SLUG_LIST)
   category?: string;
 
+  /** Brand slug, or several separated by commas. */
   @IsOptional()
-  @Matches(/^[\p{L}\p{N}-]+$/u)
+  @Matches(SLUG_LIST)
   brand?: string;
 
   /** Only products whose lowest price is at most this. */
@@ -79,12 +83,12 @@ export class CatalogService {
       .where('p.visibility IN (:...shown)', { shown: SHOWN });
     if (query.category) {
       qb.andWhere(
-        `p."primaryCategoryId" IN (SELECT id FROM categories WHERE slug = :category OR "parentId" IN (SELECT id FROM categories WHERE slug = :category))`,
-        { category: query.category },
+        `p."primaryCategoryId" IN (SELECT id FROM categories WHERE slug IN (:...categories) OR "parentId" IN (SELECT id FROM categories WHERE slug IN (:...categories)))`,
+        { categories: slugs(query.category) },
       );
     }
     if (query.brand) {
-      qb.andWhere('p."brandId" IN (SELECT id FROM brands WHERE slug = :brand)', { brand: query.brand });
+      qb.andWhere('p."brandId" IN (SELECT id FROM brands WHERE slug IN (:...brands))', { brands: slugs(query.brand) });
     }
     if (query.maxPrice) qb.andWhere(`${MIN_PRICE} <= :maxPrice`, { maxPrice: query.maxPrice });
     const term = query.q?.trim();
