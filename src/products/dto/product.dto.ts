@@ -77,6 +77,12 @@ export class ProductVariantInputDto {
   wholesalePrice?: number | null;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  salePrice?: number | null;
+
+  @IsOptional()
   @blankToNull
   @IsString()
   @MaxLength(500)
@@ -179,6 +185,12 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   wholesalePrice?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  salePrice?: number | null;
 
   @IsOptional()
   @IsEnum(ProductVisibility)

@@ -58,6 +58,10 @@ export class ProductVariant {
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: numeric })
   wholesalePrice: number | null;
 
+  /** Discounted price for this variant; blank follows the product's sale price when this variant has no retailer price of its own. */
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: numeric })
+  salePrice: number | null;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   seoTitle: string | null;
 

@@ -3,6 +3,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Product, ProductVisibility } from '../products/entities/product.entity.js';
+import { sellPrice } from '../products/price.js';
 import { takeStock } from '../products/stock.js';
 import type { CartItemDto, PlaceOrderDto } from './dto/order.dto.js';
 import { OrderItem } from './entities/order-item.entity.js';
@@ -72,7 +73,7 @@ export class OrdersService {
     const variant = grouped ? p.variants.find((v) => v.id === item.variantId) : undefined;
     if (grouped ? !variant : item.variantId) return null;
 
-    const unitPrice = Math.round(variant?.retailerPrice ?? p.retailerPrice);
+    const unitPrice = Math.round(sellPrice(p, variant).price); // the sale price while one is set
     const shared = p.images.filter((i) => !i.variantId).sort((a, b) => a.sortOrder - b.sortOrder);
     const own = variant ? p.images.filter((i) => i.variantId === variant.id).sort((a, b) => a.sortOrder - b.sortOrder) : [];
     const lead = own[0] ?? shared.find((i) => i.isPrimary) ?? shared[0] ?? p.images[0];

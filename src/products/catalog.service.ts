@@ -4,6 +4,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Product, ProductVisibility } from './entities/product.entity.js';
+import { sellPrice } from './price.js';
 import { LOW_STOCK } from './stock.service.js';
 
 /** What the storefront shows: live products, and upcoming ones that can't be ordered yet. */
@@ -60,11 +61,21 @@ const fewLeft = (stock: number | null) => (stock !== null && stock > 0 && stock 
 /** A grouped product is in stock while any variant is. */
 const inStock = (p: Product) => (p.variants.length ? p.variants.some((v) => sellable(v.stock)) : sellable(p.stock));
 
+/** The cheapest option (with its crossed-out price when on sale) and the dearest price, as shoppers pay them. */
+function priceRange(p: Product) {
+  const options = p.variants.length ? p.variants.map((v) => sellPrice(p, v)) : [sellPrice(p)];
+  const low = options.reduce((a, b) => (b.price < a.price ? b : a));
+  return { low, high: Math.max(...options.map((o) => o.price)) };
+}
+
 // Cheapest price a shopper can pay: the lowest variant price, with variants that have none
-// falling back to the product's own.
+// falling back to the product's own, and a sale price counting when it is lower (LEAST skips NULLs).
 const MIN_PRICE = `COALESCE(
-  (SELECT MIN(COALESCE(v."retailerPrice", p."retailerPrice")) FROM product_variants v WHERE v."productId" = p.id),
-  p."retailerPrice")`;
+  (SELECT MIN(LEAST(
+      COALESCE(v."retailerPrice", p."retailerPrice"),
+      COALESCE(v."salePrice", CASE WHEN v."retailerPrice" IS NULL THEN p."salePrice" END)))
+     FROM product_variants v WHERE v."productId" = p.id),
+  LEAST(p."retailerPrice", p."salePrice"))`;
 
 /** Read-only, public view of the catalog. Only live products ever leave this service. */
 @Injectable()
@@ -147,11 +158,12 @@ export class CatalogService {
         slug: v.slug,
         sku: v.sku ?? p.sku,
         attributes: v.attributes,
-        price: v.retailerPrice ?? p.retailerPrice,
+        price: sellPrice(p, v).price,
+        compareAt: sellPrice(p, v).was,
         inStock: sellable(v.stock),
         left: fewLeft(v.stock),
       }));
-    const prices = variants.length ? variants.map((v) => v.price) : [p.retailerPrice];
+    const { low, high } = priceRange(p);
     const ref = (c: { name: string; slug: string }) => ({ name: c.name, slug: c.slug });
 
     return {
@@ -172,8 +184,9 @@ export class CatalogService {
       images: [...p.images]
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((i) => ({ id: i.id, url: i.url, altText: i.altText, variantId: i.variantId })),
-      priceFrom: Math.min(...prices),
-      priceTo: Math.max(...prices),
+      priceFrom: low.price,
+      priceTo: high,
+      compareAt: p.variants.length ? null : low.was, // variants carry their own
       seoTitle: p.seoTitle,
       metaDescription: p.metaDescription,
       metaKeywords: p.metaKeywords,
@@ -215,9 +228,7 @@ export class CatalogService {
   private toCard(p: Product) {
     const shared = p.images.filter((i) => !i.variantId).sort((a, b) => a.sortOrder - b.sortOrder);
     const lead = shared.find((i) => i.isPrimary) ?? shared[0] ?? p.images[0];
-    const prices = p.variants.length
-      ? p.variants.map((v) => v.retailerPrice ?? p.retailerPrice)
-      : [p.retailerPrice];
+    const { low, high } = priceRange(p);
     return {
       id: p.id,
       slug: p.slug,
@@ -230,8 +241,10 @@ export class CatalogService {
       grouped: p.variants.length > 0,
       upcoming: p.visibility === ProductVisibility.Upcoming,
       inStock: inStock(p),
-      priceFrom: Math.min(...prices),
-      priceTo: Math.max(...prices),
+      priceFrom: low.price,
+      priceTo: high,
+      /** The normal price of the cheapest option when that one is on sale, otherwise null. */
+      compareAt: low.was,
     };
   }
 }

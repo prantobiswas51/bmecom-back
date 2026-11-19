@@ -38,6 +38,7 @@ type PriceRow = {
   buyingPrice?: number | null;
   retailerPrice?: number | null;
   wholesalePrice?: number | null;
+  salePrice?: number | null;
   attributes?: Record<string, string>;
 };
 
@@ -125,6 +126,7 @@ export class ProductsService {
         buyingPrice: 0,
         retailerPrice: 0,
         wholesalePrice: null,
+        salePrice: null,
         visibility: ProductVisibility.Draft,
         axisDefinitions: [],
         sku: null,
@@ -142,6 +144,9 @@ export class ProductsService {
     if (dto.retailerPrice != null) product.retailerPrice = taka(dto.retailerPrice);
     if (dto.wholesalePrice !== undefined) {
       product.wholesalePrice = dto.wholesalePrice == null ? null : taka(dto.wholesalePrice);
+    }
+    if (dto.salePrice !== undefined) {
+      product.salePrice = dto.salePrice == null || dto.salePrice === 0 ? null : taka(dto.salePrice);
     }
     if (dto.visibility !== undefined) product.visibility = dto.visibility;
     if (dto.seoTitle !== undefined) product.seoTitle = dto.seoTitle;
@@ -231,6 +236,11 @@ export class ProductsService {
       if (wholesale != null && wholesale > 0 && buying > wholesale) {
         throw new BadRequestException(`${label}: buying price is above the wholesale price`);
       }
+      // A variant with its own retailer price has its own sale price; otherwise it follows the product's.
+      const sale = row.salePrice ?? (row.retailerPrice == null ? product.salePrice : null);
+      if (sale != null && sale > 0 && retail > 0 && sale >= retail) {
+        throw new BadRequestException(`${label}: the sale price must be lower than the retailer price`);
+      }
     };
     check('Product', {});
     for (const v of variants) check(`Variant ${Object.values(v.attributes ?? {}).join(' / ')}`, v);
@@ -274,6 +284,7 @@ export class ProductsService {
       variant.buyingPrice = input.buyingPrice ?? null;
       variant.retailerPrice = input.retailerPrice == null ? null : taka(input.retailerPrice);
       variant.wholesalePrice = input.wholesalePrice == null ? null : taka(input.wholesalePrice);
+      variant.salePrice = input.salePrice == null || input.salePrice === 0 ? null : taka(input.salePrice);
       variant.seoTitle = input.seoTitle ?? null;
       variant.seoKeyPhrase = input.seoKeyPhrase ?? null;
       variant.metaDescription = input.metaDescription ?? null;

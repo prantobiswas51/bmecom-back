@@ -72,6 +72,10 @@ export class Product {
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: numeric })
   wholesalePrice: number | null;
 
+  /** Discounted price shoppers pay while it is set (and below the retailer price); the retailer price is shown crossed out. */
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: numeric })
+  salePrice: number | null;
+
   @Column({ type: 'enum', enum: ProductVisibility, default: ProductVisibility.Draft })
   visibility: ProductVisibility;
 
