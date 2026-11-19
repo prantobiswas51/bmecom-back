@@ -16,7 +16,7 @@ export class CatalogQueryDto {
   @IsString()
   q?: string;
 
-  /** Category slug; matches a product's primary or any secondary category. */
+  /** Category slug; matches a product's category or one of its sub categories. */
   @IsOptional()
   @Matches(/^[\p{L}\p{N}-]+$/u)
   category?: string;
@@ -72,9 +72,7 @@ export class CatalogService {
       .where('p.visibility IN (:...shown)', { shown: SHOWN });
     if (query.category) {
       qb.andWhere(
-        `(p."primaryCategoryId" IN (SELECT id FROM categories WHERE slug = :category OR "parentId" IN (SELECT id FROM categories WHERE slug = :category))
-          OR EXISTS (SELECT 1 FROM product_secondary_categories s JOIN categories c ON c.id = s."categoryId"
-                     WHERE s."productId" = p.id AND (c.slug = :category OR c."parentId" IN (SELECT id FROM categories WHERE slug = :category))))`,
+        `p."primaryCategoryId" IN (SELECT id FROM categories WHERE slug = :category OR "parentId" IN (SELECT id FROM categories WHERE slug = :category))`,
         { category: query.category },
       );
     }
@@ -126,7 +124,7 @@ export class CatalogService {
   async detail(slug: string) {
     const p = await this.products.findOne({
       where: { slug, visibility: In(SHOWN) },
-      relations: { brand: true, primaryCategory: true, secondaryCategories: true, variants: true, images: true },
+      relations: { brand: true, primaryCategory: true, variants: true, images: true },
     });
     if (!p) throw new NotFoundException('Product not found');
 
@@ -157,7 +155,6 @@ export class CatalogService {
       left: p.variants.length ? null : fewLeft(p.stock),
       brand: p.brand ? ref(p.brand) : null,
       category: p.primaryCategory ? ref(p.primaryCategory) : null,
-      secondaryCategories: p.secondaryCategories.map(ref),
       axes: p.axisDefinitions,
       variants,
       images: [...p.images]
@@ -189,11 +186,7 @@ export class CatalogService {
            LEFT JOIN categories parent ON parent.id = c."parentId"
            JOIN products p ON ${live} AND (
                 p."primaryCategoryId" = c.id
-                OR p."primaryCategoryId" IN (SELECT id FROM categories WHERE "parentId" = c.id)
-                OR EXISTS (SELECT 1 FROM product_secondary_categories s
-                            WHERE s."productId" = p.id
-                              AND (s."categoryId" = c.id
-                                   OR s."categoryId" IN (SELECT id FROM categories WHERE "parentId" = c.id))))
+                OR p."primaryCategoryId" IN (SELECT id FROM categories WHERE "parentId" = c.id))
           GROUP BY c.id, parent.slug ORDER BY c.name`,
       ),
       this.ds.query<{ name: string; slug: string; count: number }[]>(

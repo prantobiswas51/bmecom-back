@@ -105,8 +105,7 @@ export class OrdersAdminService {
     if (categoryIds.length > 0) {
       qb.andWhere(
         `EXISTS (SELECT 1 FROM order_items oi JOIN products p ON p.id = oi."productId"
-                 WHERE oi."orderId" = o.id AND (p."primaryCategoryId" IN (:...cats)
-                   OR EXISTS (SELECT 1 FROM product_secondary_categories s WHERE s."productId" = p.id AND s."categoryId" IN (:...cats))))`,
+                 WHERE oi."orderId" = o.id AND p."primaryCategoryId" IN (:...cats))`,
         { cats: categoryIds },
       );
     }

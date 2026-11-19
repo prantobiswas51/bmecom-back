@@ -80,7 +80,6 @@ export class ProductsService {
       relations: {
         brand: true,
         primaryCategory: true,
-        secondaryCategories: true,
         variants: true,
         images: true,
       },
@@ -150,7 +149,7 @@ export class ProductsService {
     if (dto.metaDescription !== undefined) product.metaDescription = dto.metaDescription;
     if (dto.metaKeywords !== undefined) product.metaKeywords = dto.metaKeywords;
 
-    // --- brand and categories ------------------------------------------
+    // --- brand and category --------------------------------------------
     if (dto.brandId !== undefined) {
       if (dto.brandId && !(await m.existsBy(Brand, { id: dto.brandId }))) {
         throw new BadRequestException('Unknown brand');
@@ -162,14 +161,6 @@ export class ProductsService {
         throw new BadRequestException('Unknown primary category');
       }
       product.primaryCategoryId = dto.primaryCategoryId ?? null;
-    }
-    if (dto.secondaryCategoryIds !== undefined) {
-      const ids = [...new Set(dto.secondaryCategoryIds)].filter(
-        (id) => id !== product.primaryCategoryId,
-      );
-      const found = ids.length ? await m.findBy(Category, { id: In(ids) }) : [];
-      if (found.length !== ids.length) throw new BadRequestException('Unknown secondary category');
-      product.secondaryCategories = found;
     }
 
     // --- variants (grouped product) ------------------------------------

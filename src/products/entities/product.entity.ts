@@ -3,8 +3,6 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
-  JoinTable,
-  ManyToMany,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -105,14 +103,6 @@ export class Product {
 
   @Column({ type: 'uuid', nullable: true })
   primaryCategoryId: string | null;
-
-  @ManyToMany(() => Category)
-  @JoinTable({
-    name: 'product_secondary_categories',
-    joinColumn: { name: 'productId', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'categoryId', referencedColumnName: 'id' },
-  })
-  secondaryCategories: Category[];
 
   @OneToMany(() => ProductVariant, (variant) => variant.product)
   variants: ProductVariant[];

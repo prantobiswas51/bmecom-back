@@ -217,11 +217,6 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsArray()
-  @IsUUID('all', { each: true })
-  secondaryCategoryIds?: string[];
-
-  @IsOptional()
-  @IsArray()
   @ArrayMaxSize(10)
   @ValidateNested({ each: true })
   @Type(() => AxisDefinitionDto)

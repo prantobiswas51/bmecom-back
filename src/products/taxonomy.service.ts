@@ -48,13 +48,12 @@ export class TaxonomyService {
 
   // ---- categories and sub categories ---------------------------------
 
-  /** Flat list with each row's parentId; the admin builds the tree. productCount counts primary and secondary use. */
+  /** Flat list with each row's parentId; the admin builds the tree. productCount is the products placed directly in it. */
   listCategories() {
     return this.ds.query<{ id: string; name: string; slug: string; parentId: string | null; productCount: number }[]>(
       `SELECT c.id, c.name, c.slug, c."parentId", COUNT(DISTINCT p.id)::int AS "productCount"
          FROM categories c
-         LEFT JOIN products p ON p."primaryCategoryId" = c.id OR EXISTS (
-              SELECT 1 FROM product_secondary_categories s WHERE s."productId" = p.id AND s."categoryId" = c.id)
+         LEFT JOIN products p ON p."primaryCategoryId" = c.id
         GROUP BY c.id ORDER BY c.name`,
     );
   }
