@@ -127,6 +127,21 @@ export class SetOrderStatusDto {
   status: OrderStatus;
 }
 
+/** Order numbers picked in the list, for changing the status of or deleting many at once. */
+export class BulkOrdersDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(60, { each: true })
+  orderNumbers: string[];
+}
+
+export class BulkStatusDto extends BulkOrdersDto {
+  @IsEnum(OrderStatus)
+  status: OrderStatus;
+}
+
 export class EditOrderItemDto {
   /** An existing line on the order. Leave out when adding a product. */
   @IsOptional()

@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { UserRole } from '../users/user.entity.js';
-import { EditOrderDto, ListOrdersAdminDto, SetOrderStatusDto } from './dto/order.dto.js';
+import { BulkOrdersDto, BulkStatusDto, EditOrderDto, ListOrdersAdminDto, SetOrderStatusDto } from './dto/order.dto.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -19,6 +19,16 @@ export class OrdersAdminController {
   @Get('products')
   searchProducts(@Query('q') q = '') {
     return this.orders.searchProducts(q);
+  }
+
+  @Post('bulk/status')
+  bulkStatus(@Body() dto: BulkStatusDto) {
+    return this.orders.bulkSetStatus(dto.orderNumbers, dto.status);
+  }
+
+  @Post('bulk/delete')
+  bulkDelete(@Body() dto: BulkOrdersDto) {
+    return this.orders.bulkDelete(dto.orderNumbers);
   }
 
   @Get(':orderNumber')

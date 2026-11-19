@@ -194,6 +194,43 @@ export class OrdersAdminService {
     return this.get(orderNumber);
   }
 
+  /** Moves each order on its own, so one that cannot make the move does not stop the rest. */
+  async bulkSetStatus(orderNumbers: string[], status: OrderStatus) {
+    const failed: { orderNumber: string; reason: string }[] = [];
+    let done = 0;
+    for (const orderNumber of new Set(orderNumbers)) {
+      try {
+        await this.setStatus(orderNumber, status);
+        done++;
+      } catch (e) {
+        failed.push({ orderNumber, reason: e instanceof Error ? e.message : 'Could not change this order' });
+      }
+    }
+    return { done, failed };
+  }
+
+  /** Deletes orders for good (their items go with them). Units still held by an open order go back on the shelf. */
+  async bulkDelete(orderNumbers: string[]) {
+    const failed: { orderNumber: string; reason: string }[] = [];
+    let done = 0;
+    for (const orderNumber of new Set(orderNumbers)) {
+      try {
+        const order = await this.orders.findOne({ where: { orderNumber }, relations: { items: true } });
+        if (!order) throw new NotFoundException('Order not found');
+        await this.orders.manager.transaction(async (m) => {
+          if (order.stockReserved && !GIVES_BACK.includes(order.status)) {
+            await returnStock(m, order.items.map(toStockLine), orderNumber);
+          }
+          await m.delete(Order, { id: order.id });
+        });
+        done++;
+      } catch (e) {
+        failed.push({ orderNumber, reason: e instanceof Error ? e.message : 'Could not delete this order' });
+      }
+    }
+    return { done, failed };
+  }
+
   /** Changes the contact details, address, delivery charge and the quantities on an order that has not shipped. */
   async edit(orderNumber: string, dto: EditOrderDto) {
     const order = await this.orders.findOne({ where: { orderNumber }, relations: { items: true } });
