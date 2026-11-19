@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { Roles, RolesGuard } from '../auth/roles.guard.js';
 import { UserRole } from '../users/user.entity.js';
 import { BlogService } from './blog.service.js';
-import { CreateBlogDto, ListBlogAdminDto, PageQueryDto, UpdateBlogDto } from './dto/blog.dto.js';
+import { CreateBlogDto, ListBlogAdminDto, ListBlogPublicDto, UpdateBlogDto } from './dto/blog.dto.js';
 
 /** Storefront: published posts only. */
 @Controller('catalog/blog')
@@ -11,8 +11,8 @@ export class BlogPublicController {
   constructor(private readonly blog: BlogService) {}
 
   @Get()
-  list(@Query() query: PageQueryDto) {
-    return this.blog.listPublic(query.page);
+  list(@Query() query: ListBlogPublicDto) {
+    return this.blog.listPublic(query.page, query.q);
   }
 
   @Get(':slug')

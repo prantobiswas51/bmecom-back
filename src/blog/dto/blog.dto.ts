@@ -12,6 +12,15 @@ export class PageQueryDto {
   page?: number;
 }
 
+export class ListBlogPublicDto extends PageQueryDto {
+  /** Words to look for in a post's title, summary or text. */
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+}
+
 export class ListBlogAdminDto extends PageQueryDto {
   @IsOptional()
   @IsEnum(BlogStatus)

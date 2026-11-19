@@ -15,9 +15,18 @@ export class BlogService {
 
   // ---- storefront ----
 
-  async listPublic(page = 1) {
+  async listPublic(page = 1, q?: string) {
+    const term = q?.trim();
+    const like = term ? ILike(`%${term.replace(/[%_\\]/g, '\\$&')}%`) : undefined;
     const [rows, total] = await this.posts.findAndCount({
-      where: { status: BlogStatus.Published },
+      // With a search term, a post matches on its title, summary or text.
+      where: like
+        ? [
+            { status: BlogStatus.Published, title: like },
+            { status: BlogStatus.Published, excerpt: like },
+            { status: BlogStatus.Published, content: like },
+          ]
+        : { status: BlogStatus.Published },
       order: { publishedAt: 'DESC', createdAt: 'DESC' },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
