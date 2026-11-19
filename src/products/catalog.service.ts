@@ -25,6 +25,13 @@ export class CatalogQueryDto {
   @Matches(/^[\p{L}\p{N}-]+$/u)
   brand?: string;
 
+  /** Only products whose lowest price is at most this. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxPrice?: number;
+
   @IsOptional()
   @IsIn(CATALOG_SORTS)
   sort?: (typeof CATALOG_SORTS)[number];
@@ -79,6 +86,7 @@ export class CatalogService {
     if (query.brand) {
       qb.andWhere('p."brandId" IN (SELECT id FROM brands WHERE slug = :brand)', { brand: query.brand });
     }
+    if (query.maxPrice) qb.andWhere(`${MIN_PRICE} <= :maxPrice`, { maxPrice: query.maxPrice });
     const term = query.q?.trim();
     if (term) {
       qb.andWhere(
@@ -178,7 +186,7 @@ export class CatalogService {
   /** Categories and brands that have at least one live product, for the shop's filter lists. */
   async filters() {
     const live = `p.visibility IN ('live', 'upcoming')`;
-    const [categories, brands] = await Promise.all([
+    const [categories, brands, [{ top }]] = await Promise.all([
       // A category counts the products in its sub categories too, matching the shop's category filter.
       this.ds.query<{ name: string; slug: string; parentSlug: string | null; count: number }[]>(
         `SELECT c.name, c.slug, parent.slug AS "parentSlug", COUNT(DISTINCT p.id)::int AS count
@@ -194,8 +202,10 @@ export class CatalogService {
            FROM brands b JOIN products p ON ${live} AND p."brandId" = b.id
           GROUP BY b.id ORDER BY b.name`,
       ),
+      // The dearest "from" price, for the price slider's upper end.
+      this.ds.query<{ top: string | null }[]>(`SELECT MAX(${MIN_PRICE}) AS top FROM products p WHERE ${live}`),
     ]);
-    return { categories, brands };
+    return { categories, brands, maxPrice: Math.ceil(Number(top ?? 0)) };
   }
 
   private toCard(p: Product) {
